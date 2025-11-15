@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Morpion — Tic Tac Toe</title>
+  <style>
+    :root{
+      --bg:#0f1724;
+      --card:#0b1220;
+      --accent:#06b6d4;
+      --accent-2:#7c3aed;
+      --muted:#9aa4b2;
+      --win:#16a34a;
+      color-scheme: dark;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;gap:24px;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;
+      background:linear-gradient(180deg,#071029 0%, #071833 100%);
+      color:rgba(255,255,255,0.92);
+      padding:32px;
+    }
+    .container{
+      width:min(720px,95vw);
+      background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border-radius:14px;padding:20px;box-shadow:0 10px 30px rgba(2,6,23,0.6);
+      display:grid;grid-template-columns:1fr 260px;gap:18px;align-items:start;
+    }
+    .game{
+      padding:12px;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));
+      display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;
+    }
+    .board{
+      --size:min(420px,72vw);
+      width:var(--size);height:var(--size);display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:8px;
+      padding:8px;border-radius:12px;background:linear-gradient(180deg, rgba(0,0,0,0.15), rgba(255,255,255,0.02));
+    }
+    .cell{
+      background:linear-gradient(180deg, rgba(255,255,255,0.015), rgba(0,0,0,0.15));
+      border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:clamp(36px,8vw,84px);cursor:pointer;user-select:none;
+      transition:transform .12s ease, box-shadow .12s ease;
+      box-shadow: inset 0 -6px 12px rgba(2,6,23,0.5);
+    }
+    .cell:hover{transform:translateY(-4px)}
+    .cell.disabled{cursor:default;opacity:0.9}
+    .x{color:var(--accent-2);font-weight:700}
+    .o{color:var(--accent);font-weight:700}
+    .sidebar{padding:12px;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));display:flex;flex-direction:column;gap:12px}
+    h1{font-size:18px;margin:0 0 6px 0}
+    .status{font-size:14px;color:var(--muted)}
+    .info{display:flex;gap:10px;align-items:center}
+    .player-badge{display:inline-grid;place-items:center;width:36px;height:36px;border-radius:8px;background:rgba(255,255,255,0.03);font-weight:700}
+    .controls{display:flex;flex-direction:column;gap:8px}
+    button{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:10px;border-radius:10px;color:inherit;cursor:pointer}
+    button.primary{background:linear-gradient(90deg,var(--accent),var(--accent-2));border:none;color:#041025;font-weight:700}
+    .score{display:flex;gap:8px;align-items:center}
+    .score .box{background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;min-width:64px;text-align:center}
+    .line{position:absolute;height:6px;background:linear-gradient(90deg,var(--win),rgba(0,0,0,0));border-radius:6px;opacity:0.95}
+    .footer{font-size:12px;color:var(--muted);text-align:center;margin-top:8px}
+    @media (max-width:720px){.container{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="game">
+      <div style="display:flex;gap:12px;align-items:center;flex-direction:column;width:100%">
+        <h1>Morpion — Tic Tac Toe</h1>
+        <div class="status">Joueur en cours : <span id="currentPlayer" style="font-weight:800">X</span></div>
+      </div>
+
+      <div id="board" class="board" aria-label="Plateau morpion"></div>
+
+      <div class="footer">Clique sur une case pour jouer. Appuie sur Recommencer pour une nouvelle partie.</div>
+    </div>
+
+    <aside class="sidebar">
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-weight:700">Score</div>
+            <div class="status">Parties jouées et victoires</div>
+          </div>
+          <div class="score">
+            <div class="box">X<br><strong id="scoreX">0</strong></div>
+            <div class="box">O<br><strong id="scoreO">0</strong></div>
+            <div class="box">Nul<br><strong id="scoreT">0</strong></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="resetBtn">Recommencer la partie</button>
+        <button id="resetAll">Réinitialiser les scores</button>
+        <button id="swapBtn">Changer de joueur de départ</button>
+      </div>
+
+      <div style="margin-top:6px">
+        <div style="font-weight:700">Astuces</div>
+        <div class="status">Le centre est fort. Bloque deux menaces en même temps.</div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    // Logique du morpion
+    const boardEl = document.getElementById('board');
+    const currentPlayerEl = document.getElementById('currentPlayer');
+    const resetBtn = document.getElementById('resetBtn');
+    const resetAll = document.getElementById('resetAll');
+    const swapBtn = document.getElementById('swapBtn');
+    const scoreXEl = document.getElementById('scoreX');
+    const scoreOEl = document.getElementById('scoreO');
+    const scoreTEl = document.getElementById('scoreT');
+
+    let board = Array(9).fill(null);
+    let current = 'X';
+    let playing = true;
+    let scores = {X:0,O:0,T:0};
+    let starter = 'X';
+
+    const wins = [
+      [0,1,2],[3,4,5],[6,7,8], // lignes
+      [0,3,6],[1,4,7],[2,5,8], // colonnes
+      [0,4,8],[2,4,6] // diagonales
+    ];
+
+    function renderBoard(){
+      boardEl.innerHTML = '';
+      board.forEach((v,i)=>{
+        const cell = document.createElement('div');
+        cell.className = 'cell' + (v? ' disabled':'');
+        cell.dataset.index = i;
+        cell.setAttribute('role','button');
+        if(v){
+          const span = document.createElement('span');
+          span.className = v === 'X' ? 'x' : 'o';
+          span.textContent = v;
+          cell.appendChild(span);
+        }
+        cell.addEventListener('click', onCellClick);
+        boardEl.appendChild(cell);
+      });
+    }
+
+    function onCellClick(e){
+      if(!playing) return;
+      const idx = Number(e.currentTarget.dataset.index);
+      if(board[idx]) return; // case occupée
+      board[idx] = current;
+      checkGame();
+      current = current === 'X' ? 'O' : 'X';
+      updateStatus();
+      renderBoard();
+    }
+
+    function updateStatus(){
+      currentPlayerEl.textContent = current;
+    }
+
+    function checkGame(){
+      // Vérifier victoire
+      for(const combo of wins){
+        const [a,b,c] = combo;
+        if(board[a] && board[a] === board[b] && board[a] === board[c]){
+          // victoire
+          playing = false;
+          highlightWin(combo);
+          scores[board[a]] += 1;
+          updateScores();
+          setTimeout(()=>{
+            alert('Le joueur ' + board[a] + ' a gagné !');
+          }, 80);
+          return;
+        }
+      }
+      // vérifier nul
+      if(board.every(Boolean)){
+        playing = false;
+        scores.T += 1;
+        updateScores();
+        setTimeout(()=>alert('Match nul !'), 80);
+      }
+    }
+
+    function highlightWin(combo){
+      // calculer ligne visuelle simple
+      const firstCell = boardEl.children[combo[0]];
+      const lastCell = boardEl.children[combo[2]];
+
+      const rect1 = firstCell.getBoundingClientRect();
+      const rect2 = lastCell.getBoundingClientRect();
+      const containerRect = boardEl.getBoundingClientRect();
+
+      const line = document.createElement('div');
+      line.className = 'line';
+      // position relative au conteneur
+      const cx1 = rect1.left + rect1.width/2 - containerRect.left;
+      const cy1 = rect1.top + rect1.height/2 - containerRect.top;
+      const cx2 = rect2.left + rect2.width/2 - containerRect.left;
+      const cy2 = rect2.top + rect2.height/2 - containerRect.top;
+      const dx = cx2 - cx1;
+      const dy = cy2 - cy1;
+      const length = Math.sqrt(dx*dx + dy*dy);
+      const angle = Math.atan2(dy, dx) * 180/Math.PI;
+
+      line.style.width = length + 'px';
+      line.style.left = (cx1 - 6) + 'px';
+      line.style.top = (cy1 - 3) + 'px';
+      line.style.transformOrigin = 'left center';
+      line.style.transform = `rotate(${angle}deg)`;
+
+      boardEl.appendChild(line);
+    }
+
+    function updateScores(){
+      scoreXEl.textContent = scores.X;
+      scoreOEl.textContent = scores.O;
+      scoreTEl.textContent = scores.T;
+    }
+
+    function resetGame(newStarter = null){
+      board = Array(9).fill(null);
+      playing = true;
+      if(newStarter) starter = newStarter;
+      current = starter;
+      // remove any line
+      const oldLine = boardEl.querySelector('.line');
+      if(oldLine) oldLine.remove();
+      renderBoard();
+      updateStatus();
+    }
+
+    resetBtn.addEventListener('click', ()=> resetGame());
+    resetAll.addEventListener('click', ()=>{
+      scores = {X:0,O:0,T:0};
+      updateScores();
+      resetGame('X');
+    });
+    swapBtn.addEventListener('click', ()=>{
+      starter = starter === 'X' ? 'O' : 'X';
+      resetGame(starter);
+    });
+
+    // initialisation
+    renderBoard();
+    updateStatus();
+
+    // Touch-friendly: enlarge hit area on small screens
+    window.addEventListener('resize', ()=>{
+      renderBoard();
+    });
+  </script>
+</body>
+</html>
