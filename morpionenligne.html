@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Morpion — Tic Tac Toe (Multijoueur WS)</title>
+  <style>
+    :root{--bg:#0f1724;--accent:#06b6d4;--accent-2:#7c3aed;--muted:#9aa4b2;--win:#16a34a;color-scheme:dark}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;gap:24px;font-family:Inter,system-ui,Arial;background:linear-gradient(180deg,#071029 0%, #071833 100%);color:rgba(255,255,255,0.92);padding:32px}
+    .container{width:min(920px,96vw);background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:14px;padding:18px;box-shadow:0 10px 30px rgba(2,6,23,0.6);display:grid;grid-template-columns:1fr 320px;gap:18px}
+    .game{padding:12px;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));display:flex;flex-direction:column;gap:12px;align-items:center}
+    .board{--size:min(420px,72vw);width:var(--size);height:var(--size);display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:8px;padding:8px;border-radius:12px;background:linear-gradient(180deg, rgba(0,0,0,0.15), rgba(255,255,255,0.02));position:relative}
+    .cell{background:linear-gradient(180deg, rgba(255,255,255,0.015), rgba(0,0,0,0.15));border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:clamp(36px,8vw,84px);cursor:pointer;user-select:none;transition:transform .12s ease, box-shadow .12s ease;box-shadow: inset 0 -6px 12px rgba(2,6,23,0.5)}
+    .cell:hover{transform:translateY(-4px)}.cell.disabled{cursor:default;opacity:0.9}.x{color:var(--accent-2);font-weight:700}.o{color:var(--accent);font-weight:700}
+    .sidebar{padding:12px;border-radius:10px;background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.005));display:flex;flex-direction:column;gap:12px}
+    h1{font-size:18px;margin:0 0 6px 0}.status{font-size:14px;color:var(--muted)}.controls{display:flex;flex-direction:column;gap:8px}
+    button{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:10px;border-radius:10px;color:inherit;cursor:pointer}button.primary{background:linear-gradient(90deg,var(--accent),var(--accent-2));border:none;color:#041025;font-weight:700}
+    .log{background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;min-height:120px;overflow:auto;font-size:13px}
+    .players{display:flex;gap:8px;align-items:center}
+    pre{background:#071022;padding:12px;border-radius:8px;overflow:auto}
+    @media (max-width:880px){.container{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="game">
+      <div style="display:flex;gap:12px;align-items:center;flex-direction:column;width:100%">
+        <h1>Morpion — Mode Multijoueur (WebSocket)</h1>
+        <div class="status">Etat : <strong id="state">déconnecté</strong> — Ton symbole : <strong id="mySym">—</strong></div>
+      </div>
+
+      <div id="board" class="board" aria-label="Plateau morpion"></div>
+
+      <div style="display:flex;gap:8px;width:100%;justify-content:center">
+        <button id="connectBtn" class="primary">Se connecter</button>
+        <button id="newGameBtn">Nouvelle partie</button>
+      </div>
+    </div>
+
+    <aside class="sidebar">
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-weight:700">Joueurs</div>
+            <div class="players status"><div>X: <span id="playerX">—</span></div><div>O: <span id="playerO">—</span></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div style="font-weight:700">Journal</div>
+        <div id="log" class="log"></div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    const boardEl = document.getElementById('board');
+    const stateEl = document.getElementById('state');
+    const mySymEl = document.getElementById('mySym');
+    const connectBtn = document.getElementById('connectBtn');
+    const newGameBtn = document.getElementById('newGameBtn');
+    const logEl = document.getElementById('log');
+    const playerXEl = document.getElementById('playerX');
+    const playerOEl = document.getElementById('playerO');
+
+    const WS_URL = 'ws://<IP_DU_SERVEUR>:3000'; // Remplacez <IP_DU_SERVEUR> par l'adresse IP de votre serveur WebSocket
+
+    let ws = null;
+    let id = null;
+    let players = {X:null,O:null};
+    let board = Array(9).fill(null);
+    let mySym = null;
+    let turn = 'X';
+    let playing = true;
+
+    function log(msg){
+      const d = document.createElement('div');
+      d.textContent = msg;
+      logEl.appendChild(d);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function renderBoard(){
+      boardEl.innerHTML = '';
+      board.forEach((v,i)=>{
+        const cell = document.createElement('div');
+        cell.className = 'cell' + (v? ' disabled':'');
+        cell.dataset.index = i;
+        if(v){
+          const span=document.createElement('span');
+          span.className = v==='X'?'x':'o';
+          span.textContent=v;
+          cell.appendChild(span);
+        }
+        cell.addEventListener('click', onCellClick);
+        boardEl.appendChild(cell);
+      });
+    }
+
+    function onCellClick(e){
+      if(!ws || ws.readyState!==WebSocket.OPEN) return alert('Pas connecté au serveur');
+      if(!playing) return;
+      const idx = Number(e.currentTarget.dataset.index);
+      if(board[idx]) return;
+      if(!mySym) return alert("En attente d'assignation (joueur)...");
+      if(turn !== mySym) return alert("Ce n'est pas ton tour");
+      ws.send(JSON.stringify({type:'move', index:idx, sym:mySym}));
+    }
+
+    function updateUIState(){
+      stateEl.textContent = ws && ws.readyState===WebSocket.OPEN ? 'connecté' : 'déconnecté';
+      mySymEl.textContent = mySym || '—';
+      playerXEl.textContent = players.X ? ('id '+players.X) : '—';
+      playerOEl.textContent = players.O ? ('id '+players.O) : '—';
+    }
+
+    connectBtn.addEventListener('click', ()=>{
+      if(ws && ws.readyState===WebSocket.OPEN) { ws.close(); connectBtn.textContent='Se connecter'; return; }
+      ws = new WebSocket(WS_URL);
+      ws.addEventListener('open', ()=>{ log('WS ouvert'); updateUIState(); connectBtn.textContent='Déconnecter'; });
+      ws.addEventListener('close', ()=>{ log('WS fermé'); id=null; mySym=null; updateUIState(); connectBtn.textContent='Se connecter'; });
+      ws.addEventListener('message', (ev)=>{
+        try{
+          const msg = JSON.parse(ev.data);
+          if(msg.type==='init'){
+            id = msg.id; players = msg.players; board = msg.board; turn = msg.turn;
+            if(players.X===id) mySym='X'; else if(players.O===id) mySym='O'; else mySym=null;
+            log('Initialisé. id='+id+' turn='+turn);
+            updateUIState(); renderBoard();
+          } else if(msg.type==='players'){
+            players = msg.players;
+            if(players.X===id) mySym='X'; else if(players.O===id) mySym='O';
+            log('Joueurs mis à jour'); updateUIState();
+          } else if(msg.type==='move'){
+            board = msg.board; turn = msg.turn; renderBoard(); log('Coup: '+msg.sym+' @'+msg.index); checkLocalEnd();
+          } else if(msg.type==='reset'){
+            board = msg.board; turn = msg.turn; playing=true; renderBoard(); log('Partie réinitialisée');
+          }
+        }catch(e){console.error(e)}
+      });
+    });
+
+    newGameBtn.addEventListener('click', ()=>{
+      if(ws && ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({type:'reset'}));
+      else { board = Array(9).fill(null); renderBoard(); }
+    });
+
+    const wins = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+    function checkLocalEnd(){
+      for(const combo of wins){ const [a,b,c]=combo;
+        if(board[a]&&board[a]===board[b]&&board[a]===board[c]){ playing=false; log('Victoire: '+board[a]); return; }
+      }
+      if(board.every(Boolean)){ playing=false; log('Match nul'); }
+    }
+
+    renderBoard();
+    updateUIState();
+  </script>
+</body>
+</html>
